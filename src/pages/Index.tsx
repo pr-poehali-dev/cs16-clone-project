@@ -16,19 +16,28 @@ interface Weapon {
   ammo: number;
   reserve: number;
   category: 'pistol' | 'shotgun' | 'rifle' | 'smg' | 'lmg';
+  damage: number;
+}
+
+interface Bot {
+  id: number;
+  x: number;
+  y: number;
+  health: number;
+  team: 'ct' | 't';
 }
 
 const weapons: Weapon[] = [
-  { id: 'glock', name: 'Glock-18', price: 0, ammo: 20, reserve: 90, category: 'pistol' },
-  { id: 'usp', name: 'USP-S', price: 200, ammo: 12, reserve: 100, category: 'pistol' },
-  { id: 'deagle', name: 'Desert Eagle', price: 700, ammo: 7, reserve: 35, category: 'pistol' },
-  { id: 'nova', name: 'Nova', price: 1050, ammo: 8, reserve: 32, category: 'shotgun' },
-  { id: 'xm1014', name: 'XM1014', price: 2000, ammo: 7, reserve: 32, category: 'shotgun' },
-  { id: 'ak47', name: 'AK-47', price: 2700, ammo: 30, reserve: 90, category: 'rifle' },
-  { id: 'm4a1', name: 'M4A1-S', price: 2900, ammo: 25, reserve: 75, category: 'rifle' },
-  { id: 'awp', name: 'AWP', price: 4750, ammo: 10, reserve: 30, category: 'rifle' },
-  { id: 'mp9', name: 'MP9', price: 1250, ammo: 30, reserve: 120, category: 'smg' },
-  { id: 'm249', name: 'M249', price: 5200, ammo: 100, reserve: 200, category: 'lmg' },
+  { id: 'glock', name: 'Glock-18', price: 0, ammo: 20, reserve: 90, category: 'pistol', damage: 28 },
+  { id: 'usp', name: 'USP-S', price: 200, ammo: 12, reserve: 100, category: 'pistol', damage: 35 },
+  { id: 'deagle', name: 'Desert Eagle', price: 700, ammo: 7, reserve: 35, category: 'pistol', damage: 53 },
+  { id: 'nova', name: 'Nova', price: 1050, ammo: 8, reserve: 32, category: 'shotgun', damage: 26 },
+  { id: 'xm1014', name: 'XM1014', price: 2000, ammo: 7, reserve: 32, category: 'shotgun', damage: 20 },
+  { id: 'ak47', name: 'AK-47', price: 2700, ammo: 30, reserve: 90, category: 'rifle', damage: 36 },
+  { id: 'm4a1', name: 'M4A1-S', price: 2900, ammo: 25, reserve: 75, category: 'rifle', damage: 33 },
+  { id: 'awp', name: 'AWP', price: 4750, ammo: 10, reserve: 30, category: 'rifle', damage: 115 },
+  { id: 'mp9', name: 'MP9', price: 1250, ammo: 30, reserve: 120, category: 'smg', damage: 26 },
+  { id: 'm249', name: 'M249', price: 5200, ammo: 100, reserve: 200, category: 'lmg', damage: 32 },
 ];
 
 export default function Index() {
@@ -42,20 +51,119 @@ export default function Index() {
   const [showShop, setShowShop] = useState(false);
   const [health, setHealth] = useState(100);
   const [armor, setArmor] = useState(0);
+  const [playerX, setPlayerX] = useState(50);
+  const [playerY, setPlayerY] = useState(50);
+  const [bots, setBots] = useState<Bot[]>([]);
+  const [kills, setKills] = useState(0);
+  const [deaths, setDeaths] = useState(0);
+  const [keysPressed, setKeysPressed] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
+    if (gameState === 'game' && bots.length === 0) {
+      const newBots: Bot[] = [];
+      for (let i = 0; i < botCount[0]; i++) {
+        newBots.push({
+          id: i,
+          x: Math.random() * 80 + 10,
+          y: Math.random() * 60 + 20,
+          health: 100,
+          team: i % 2 === 0 ? 'ct' : 't',
+        });
+      }
+      setBots(newBots);
+    }
+  }, [gameState, botCount, bots.length]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (gameState === 'game' && (e.key === 'b' || e.key === 'B' || e.key === 'и' || e.key === 'И')) {
         setShowShop(!showShop);
+        return;
       }
       if (showShop && e.key === 'Escape') {
         setShowShop(false);
+        return;
+      }
+      if (gameState === 'game' && !showShop) {
+        setKeysPressed(prev => new Set(prev).add(e.key.toLowerCase()));
       }
     };
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [gameState, showShop]);
+    const handleKeyUp = (e: KeyboardEvent) => {
+      setKeysPressed(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(e.key.toLowerCase());
+        return newSet;
+      });
+    };
+
+    const handleClick = () => {
+      if (gameState === 'game' && !showShop && currentWeapon.ammo > 0) {
+        setCurrentWeapon({ ...currentWeapon, ammo: currentWeapon.ammo - 1 });
+        
+        const nearestBot = bots
+          .filter(b => b.health > 0 && b.team !== team)
+          .sort((a, b) => {
+            const distA = Math.sqrt((a.x - playerX) ** 2 + (a.y - playerY) ** 2);
+            const distB = Math.sqrt((b.x - playerX) ** 2 + (b.y - playerY) ** 2);
+            return distA - distB;
+          })[0];
+
+        if (nearestBot) {
+          const distance = Math.sqrt((nearestBot.x - playerX) ** 2 + (nearestBot.y - playerY) ** 2);
+          if (distance < 40) {
+            setBots(bots.map(b => {
+              if (b.id === nearestBot.id) {
+                const newHealth = b.health - currentWeapon.damage;
+                if (newHealth <= 0) {
+                  setKills(kills + 1);
+                  setMoney(money + 300);
+                  return { ...b, health: 0 };
+                }
+                return { ...b, health: newHealth };
+              }
+              return b;
+            }));
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('click', handleClick);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('click', handleClick);
+    };
+  }, [gameState, showShop, currentWeapon, bots, playerX, playerY, team, kills, money]);
+
+  useEffect(() => {
+    if (gameState !== 'game' || showShop) return;
+
+    const moveInterval = setInterval(() => {
+      const speed = 0.8;
+      let newX = playerX;
+      let newY = playerY;
+
+      if (keysPressed.has('w') || keysPressed.has('ц')) newY -= speed;
+      if (keysPressed.has('s') || keysPressed.has('ы')) newY += speed;
+      if (keysPressed.has('a') || keysPressed.has('ф')) newX -= speed;
+      if (keysPressed.has('d') || keysPressed.has('в')) newX += speed;
+
+      newX = Math.max(5, Math.min(95, newX));
+      newY = Math.max(10, Math.min(90, newY));
+
+      if (newX !== playerX || newY !== playerY) {
+        setPlayerX(newX);
+        setPlayerY(newY);
+      }
+    }, 16);
+
+    return () => clearInterval(moveInterval);
+  }, [gameState, showShop, keysPressed, playerX, playerY]);
 
   const handleBuyWeapon = (weapon: Weapon) => {
     if (money >= weapon.price) {
@@ -258,6 +366,42 @@ export default function Index() {
       <div className="absolute top-1/2 right-1/4 w-24 h-40 bg-[#8B7355] rounded"></div>
       <div className="absolute bottom-1/4 left-1/3 w-48 h-4 bg-[#654321] rounded-full"></div>
 
+      {bots.map(bot => bot.health > 0 && (
+        <div 
+          key={bot.id}
+          className="absolute transition-all duration-100"
+          style={{ 
+            left: `${bot.x}%`, 
+            top: `${bot.y}%`,
+            transform: 'translate(-50%, -50%)'
+          }}
+        >
+          <div className="relative">
+            <div className={`text-4xl ${bot.team === 'ct' ? 'filter brightness-110' : ''}`}>
+              {bot.team === 'ct' ? '🛡️' : '💣'}
+            </div>
+            <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap">
+              <div className="bg-destructive/90 px-2 py-0.5 rounded text-xs font-orbitron font-bold">
+                {Math.ceil(bot.health)}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      <div 
+        className="absolute transition-all duration-75 z-20"
+        style={{ 
+          left: `${playerX}%`, 
+          top: `${playerY}%`,
+          transform: 'translate(-50%, -50%)'
+        }}
+      >
+        <div className="text-5xl animate-pulse">
+          {team === 'ct' ? '👮' : '🥷'}
+        </div>
+      </div>
+
       <div className="relative z-10 p-4">
         <div className="flex justify-between items-start">
           <div className="space-y-2">
@@ -281,17 +425,37 @@ export default function Index() {
             </div>
           </div>
 
-          <div className="bg-card/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-border">
-            <div className="text-center">
-              <div className="text-xs text-muted-foreground">Карта</div>
-              <div className="text-lg font-semibold">De_Dust2</div>
+          <div className="space-y-2">
+            <div className="bg-card/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-border">
+              <div className="text-center">
+                <div className="text-xs text-muted-foreground">Карта</div>
+                <div className="text-lg font-semibold">De_Dust2</div>
+              </div>
+            </div>
+            
+            <div className="bg-card/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-border">
+              <div className="flex items-center justify-center gap-3">
+                <div className="text-center">
+                  <div className="text-xs text-muted-foreground">Убийства</div>
+                  <div className="text-xl font-orbitron font-bold text-accent">{kills}</div>
+                </div>
+                <div className="text-muted-foreground">/</div>
+                <div className="text-center">
+                  <div className="text-xs text-muted-foreground">Смерти</div>
+                  <div className="text-xl font-orbitron font-bold text-destructive">{deaths}</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-center">
-          <div className="bg-card/90 backdrop-blur-sm px-6 py-2 rounded-lg border border-primary/30 mb-2">
-            <div className="text-sm text-muted-foreground">Нажмите <kbd className="px-2 py-1 bg-primary text-primary-foreground rounded font-orbitron font-bold">B</kbd> для открытия магазина</div>
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-center space-y-2">
+          <div className="bg-card/90 backdrop-blur-sm px-6 py-2 rounded-lg border border-primary/30">
+            <div className="text-sm text-muted-foreground">
+              <kbd className="px-2 py-1 bg-secondary rounded font-semibold">WASD</kbd> движение · 
+              <kbd className="px-2 py-1 bg-secondary rounded font-semibold ml-2">ЛКМ</kbd> стрельба · 
+              <kbd className="px-2 py-1 bg-primary text-primary-foreground rounded font-orbitron font-bold ml-2">B</kbd> магазин
+            </div>
           </div>
         </div>
 
