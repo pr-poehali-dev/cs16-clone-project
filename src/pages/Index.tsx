@@ -57,6 +57,11 @@ export default function Index() {
   const [kills, setKills] = useState(0);
   const [deaths, setDeaths] = useState(0);
   const [keysPressed, setKeysPressed] = useState<Set<string>>(new Set());
+  const [showConsole, setShowConsole] = useState(false);
+  const [consoleInput, setConsoleInput] = useState('');
+  const [consoleHistory, setConsoleHistory] = useState<string[]>(['Консоль готова. Введите команду...']);
+  const [fpsMax, setFpsMax] = useState(60);
+  const [currentFps, setCurrentFps] = useState(60);
 
   useEffect(() => {
     if (gameState === 'game' && bots.length === 0) {
@@ -76,7 +81,15 @@ export default function Index() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (gameState === 'game' && (e.key === 'b' || e.key === 'B' || e.key === 'и' || e.key === 'И')) {
+      if (gameState === 'game' && e.key === '`') {
+        setShowConsole(!showConsole);
+        return;
+      }
+      if (showConsole && e.key === 'Escape') {
+        setShowConsole(false);
+        return;
+      }
+      if (gameState === 'game' && !showConsole && (e.key === 'b' || e.key === 'B' || e.key === 'и' || e.key === 'И')) {
         setShowShop(!showShop);
         return;
       }
@@ -84,7 +97,7 @@ export default function Index() {
         setShowShop(false);
         return;
       }
-      if (gameState === 'game' && !showShop) {
+      if (gameState === 'game' && !showShop && !showConsole) {
         setKeysPressed(prev => new Set(prev).add(e.key.toLowerCase()));
       }
     };
@@ -98,7 +111,7 @@ export default function Index() {
     };
 
     const handleClick = () => {
-      if (gameState === 'game' && !showShop && currentWeapon.ammo > 0) {
+      if (gameState === 'game' && !showShop && !showConsole && currentWeapon.ammo > 0) {
         setCurrentWeapon({ ...currentWeapon, ammo: currentWeapon.ammo - 1 });
         
         const nearestBot = bots
@@ -138,11 +151,12 @@ export default function Index() {
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('click', handleClick);
     };
-  }, [gameState, showShop, currentWeapon, bots, playerX, playerY, team, kills, money]);
+  }, [gameState, showShop, showConsole, currentWeapon, bots, playerX, playerY, team, kills, money]);
 
   useEffect(() => {
-    if (gameState !== 'game' || showShop) return;
+    if (gameState !== 'game' || showShop || showConsole) return;
 
+    const frameTime = 1000 / fpsMax;
     const moveInterval = setInterval(() => {
       const speed = 0.8;
       let newX = playerX;
@@ -160,10 +174,70 @@ export default function Index() {
         setPlayerX(newX);
         setPlayerY(newY);
       }
-    }, 16);
+    }, frameTime);
 
     return () => clearInterval(moveInterval);
-  }, [gameState, showShop, keysPressed, playerX, playerY]);
+  }, [gameState, showShop, showConsole, keysPressed, playerX, playerY, fpsMax]);
+
+  useEffect(() => {
+    if (gameState !== 'game') return;
+
+    let lastTime = performance.now();
+    let frameCount = 0;
+
+    const fpsInterval = setInterval(() => {
+      const now = performance.now();
+      const delta = now - lastTime;
+      const fps = Math.round((frameCount * 1000) / delta);
+      setCurrentFps(fps);
+      frameCount = 0;
+      lastTime = now;
+    }, 1000);
+
+    const countFrame = () => {
+      frameCount++;
+      requestAnimationFrame(countFrame);
+    };
+    countFrame();
+
+    return () => clearInterval(fpsInterval);
+  }, [gameState]);
+
+  const handleConsoleCommand = (command: string) => {
+    const trimmed = command.trim().toLowerCase();
+    const newHistory = [...consoleHistory];
+
+    newHistory.push(`> ${command}`);
+
+    if (trimmed.startsWith('fps_max')) {
+      const parts = trimmed.split(' ');
+      if (parts.length === 2) {
+        const value = parseInt(parts[1]);
+        if (!isNaN(value) && value > 0 && value <= 500) {
+          setFpsMax(value);
+          newHistory.push(`✓ FPS ограничен до ${value}`);
+        } else {
+          newHistory.push('✗ Ошибка: значение должно быть от 1 до 500');
+        }
+      } else {
+        newHistory.push(`FPS Max: ${fpsMax}`);
+      }
+    } else if (trimmed === 'help' || trimmed === 'помощь') {
+      newHistory.push('Доступные команды:');
+      newHistory.push('  fps_max [число] - установить максимальный FPS (1-500)');
+      newHistory.push('  clear - очистить консоль');
+      newHistory.push('  help - показать эту справку');
+    } else if (trimmed === 'clear' || trimmed === 'cls') {
+      setConsoleHistory(['Консоль очищена']);
+      setConsoleInput('');
+      return;
+    } else if (trimmed !== '') {
+      newHistory.push(`✗ Неизвестная команда: ${command}`);
+    }
+
+    setConsoleHistory(newHistory.slice(-20));
+    setConsoleInput('');
+  };
 
   const handleBuyWeapon = (weapon: Weapon) => {
     if (money >= weapon.price) {
@@ -449,12 +523,23 @@ export default function Index() {
           </div>
         </div>
 
+        <div className="absolute top-8 left-8">
+          <div className="bg-card/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-border">
+            <div className="text-center">
+              <div className="text-xs text-muted-foreground">FPS</div>
+              <div className="text-2xl font-orbitron font-bold text-accent">{currentFps}</div>
+              <div className="text-xs text-muted-foreground">макс: {fpsMax}</div>
+            </div>
+          </div>
+        </div>
+
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-center space-y-2">
           <div className="bg-card/90 backdrop-blur-sm px-6 py-2 rounded-lg border border-primary/30">
             <div className="text-sm text-muted-foreground">
               <kbd className="px-2 py-1 bg-secondary rounded font-semibold">WASD</kbd> движение · 
               <kbd className="px-2 py-1 bg-secondary rounded font-semibold ml-2">ЛКМ</kbd> стрельба · 
-              <kbd className="px-2 py-1 bg-primary text-primary-foreground rounded font-orbitron font-bold ml-2">B</kbd> магазин
+              <kbd className="px-2 py-1 bg-primary text-primary-foreground rounded font-orbitron font-bold ml-2">B</kbd> магазин · 
+              <kbd className="px-2 py-1 bg-secondary rounded font-semibold ml-2">`</kbd> консоль
             </div>
           </div>
         </div>
@@ -576,6 +661,52 @@ export default function Index() {
               </Button>
             </div>
           </Card>
+        </div>
+      )}
+
+      {showConsole && (
+        <div className="absolute top-0 left-0 right-0 bg-black/95 backdrop-blur-sm z-50 p-4 animate-fade-in border-b-2 border-primary max-h-[50vh] overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between mb-3 pb-2 border-b border-primary/30">
+            <div className="flex items-center gap-2">
+              <Icon name="Terminal" size={20} className="text-primary" />
+              <h3 className="text-lg font-orbitron font-bold text-primary">Консоль разработчика</h3>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => setShowConsole(false)}>
+              <Icon name="X" size={20} />
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto mb-3 space-y-1 font-mono text-sm">
+            {consoleHistory.map((line, i) => (
+              <div key={i} className={`${line.startsWith('>') ? 'text-accent' : line.startsWith('✓') ? 'text-green-400' : line.startsWith('✗') ? 'text-red-400' : 'text-muted-foreground'}`}>
+                {line}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-primary font-orbitron font-bold">{'>'}</span>
+            <input
+              type="text"
+              value={consoleInput}
+              onChange={(e) => setConsoleInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleConsoleCommand(consoleInput);
+                }
+                if (e.key === 'Escape') {
+                  setShowConsole(false);
+                }
+              }}
+              placeholder="Введите команду (например: fps_max 250)"
+              className="flex-1 bg-card border border-primary/30 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-primary"
+              autoFocus
+            />
+          </div>
+
+          <div className="mt-2 text-xs text-muted-foreground">
+            Подсказка: введите <span className="text-primary font-semibold">help</span> для списка команд
+          </div>
         </div>
       )}
 
